@@ -1,0 +1,27 @@
+# .NET build output
+bin/
+obj/
+TestResults/
+
+# build.ps1 output: published exe and Inno Setup installer
+publish/
+dist/
+
+# Python virtualenv (not used by the app)
+.venv/
+
+# Editor / IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Personal files
+instruction.txt
+reference.jpg
