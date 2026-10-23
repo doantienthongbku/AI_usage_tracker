@@ -2,6 +2,8 @@
 
 A small Windows 11 tray app, in the spirit of RunCat and [limitbar](https://github.com/dancik/limitbar), that shows how much of your **Claude Pro**, **ChatGPT Plus** and **Google AI Pro** limits you have used.
 
+![The AI Usage Tracker panel showing Claude, ChatGPT and Gemini limits](UI.png)
+
 - **Taskbar:** three small number icons, one per AI, each showing that AI's highest current usage (5-hour or weekly window).
   - Digits are **white** below 80 %, **amber** from 80 % and **red** from 90 %.
   - The colored underline tells them apart: orange = Claude, green = ChatGPT, blue = Gemini.
