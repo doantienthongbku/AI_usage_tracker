@@ -1,7 +1,7 @@
 <Window x:Class="AIUsageTracker.Flyout"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AI Usage Tracker" Width="420" SizeToContent="Height"
+        Title="AI Usage Tracker" Width="460" SizeToContent="Height"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
         Background="Transparent" Foreground="#F2F2F2" UseLayoutRounding="True"
         FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12.5">
@@ -72,6 +72,67 @@
             </Setter>
         </Style>
 
+        <!-- A "Tray numbers" choice: a menu item that stays blue while chosen. -->
+        <Style x:Key="Segment" TargetType="RadioButton" BasedOn="{StaticResource Item}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="6" Padding="8,3" Margin="2,0,0,0">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#1FFFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#3B82F6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The transparency slider: a thin track, blue up to a white knob. -->
+        <Style x:Key="SliderPart" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent">
+                            <Border Height="4" CornerRadius="2" Background="{TemplateBinding Background}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="Slider">
+            <Setter Property="IsMoveToPointEnabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Track x:Name="PART_Track" Height="18">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderPart}" Background="#3B82F6" Command="{x:Static Slider.DecreaseLarge}" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderPart}" Background="#33FFFFFF" Command="{x:Static Slider.IncreaseLarge}" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Width="12" Height="12" Fill="White" />
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="Glyph" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
             <Setter Property="Width" Value="24" />
@@ -82,6 +143,47 @@
     <Border x:Name="Root" Background="Transparent" Padding="12,12,12,8">
         <StackPanel>
             <StackPanel x:Name="CardsPanel" Margin="8,0,0,0" />
+
+            <!-- The settings page takes the place of the limits. Every change applies and saves at once. -->
+            <StackPanel x:Name="SettingsPanel" Visibility="Collapsed">
+                <Button Style="{StaticResource Item}" Click="Settings_Click">
+                    <DockPanel>
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE72B;" />
+                        <TextBlock Text="Settings" FontSize="14" FontWeight="SemiBold" />
+                    </DockPanel>
+                </Button>
+                <Border Height="1" Background="#1AFFFFFF" Margin="0,6,0,4" />
+                <ToggleButton x:Name="LoginSwitch" Style="{StaticResource Switch}" Checked="Login_Changed" Unchecked="Login_Changed">
+                    <DockPanel>
+                        <TextBlock Style="{StaticResource Glyph}" Text="&#xE7F4;" />
+                        <TextBlock Text="Open at Login" />
+                    </DockPanel>
+                </ToggleButton>
+                <DockPanel Margin="8,2">
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE916;" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Item}" Tag="+" Click="Minutes_Click" Content="+" />
+                    <TextBlock x:Name="MinutesText" DockPanel.Dock="Right" Width="52" TextAlignment="Center" VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Item}" Tag="-" Click="Minutes_Click" Content="−" />
+                    <TextBlock Text="Refresh every" VerticalAlignment="Center" />
+                </DockPanel>
+                <DockPanel Margin="8,6">
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE790;" />
+                    <TextBlock Text="Transparency" Width="110" VerticalAlignment="Center" />
+                    <TextBlock x:Name="GlassText" DockPanel.Dock="Right" Width="40" TextAlignment="Right" VerticalAlignment="Center" />
+                    <Slider x:Name="GlassSlider" Minimum="0" Maximum="90" TickFrequency="5" IsSnapToTickEnabled="True"
+                            ValueChanged="Glass_Changed" />
+                </DockPanel>
+                <DockPanel Margin="8,2">
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE8EF;" />
+                    <TextBlock Text="Tray numbers" VerticalAlignment="Center" />
+                    <StackPanel x:Name="TrayChoice" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <RadioButton Style="{StaticResource Segment}" GroupName="Tray" Tag="max" Content="Highest" Checked="Tray_Checked" />
+                        <RadioButton Style="{StaticResource Segment}" GroupName="Tray" Tag="5h" Content="5 hours" Checked="Tray_Checked" />
+                        <RadioButton Style="{StaticResource Segment}" GroupName="Tray" Tag="week" Content="Week" Checked="Tray_Checked" />
+                    </StackPanel>
+                </DockPanel>
+            </StackPanel>
+
             <Border Height="1" Background="#26FFFFFF" Margin="0,10,0,6" />
             <Button Style="{StaticResource Item}" Click="Refresh_Click">
                 <DockPanel>
@@ -90,12 +192,12 @@
                     <TextBlock x:Name="RefreshText" Text="Refresh Now" />
                 </DockPanel>
             </Button>
-            <ToggleButton x:Name="LoginSwitch" Style="{StaticResource Switch}" Checked="Login_Changed" Unchecked="Login_Changed">
+            <Button Style="{StaticResource Item}" Click="Settings_Click">
                 <DockPanel>
-                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE7F4;" />
-                    <TextBlock Text="Open at Login" />
+                    <TextBlock Style="{StaticResource Glyph}" Text="&#xE713;" />
+                    <TextBlock Text="Settings" />
                 </DockPanel>
-            </ToggleButton>
+            </Button>
             <Button Style="{StaticResource Item}" Click="Quit_Click">
                 <DockPanel>
                     <TextBlock Style="{StaticResource Glyph}" Text="&#xE7E8;" />

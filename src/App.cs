@@ -10,7 +10,8 @@ using Forms = System.Windows.Forms;
 namespace AIUsageTracker;
 
 /// %LOCALAPPDATA%\AIUsageTracker\config.json. An empty wslDistro runs the CLIs natively on Windows.
-record Config(string WslDistro = "Ubuntu-20.04", int RefreshMinutes = 10);
+/// Transparency is the panel glass in percent; TrayShows is "max", "5h" or "week".
+record Config(string WslDistro = "Ubuntu-20.04", int RefreshMinutes = 10, int Transparency = 40, string TrayShows = "max");
 
 /// Tray app: three number icons (Claude, ChatGPT, Gemini), a refresh timer, and the flyout.
 static class App
@@ -22,8 +23,14 @@ static class App
                                   new("Gemini", "Google AI Pro", null, null, [])];
     public static bool Busy { get; private set; }
     static readonly Forms.NotifyIcon[] Icons = new Forms.NotifyIcon[3];
+    static readonly string ConfigFile = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIUsageTracker", "config.json");
+    static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     static Config config = new();
+    static DispatcherTimer timer = new();
     static Flyout flyout = null!;
+
+    public static Config Config => config;
 
     [STAThread]
     static void Main()
@@ -46,7 +53,7 @@ static class App
             Icons[i].MouseUp += (_, _) => flyout.Toggle();
         }
         UpdateIcons();
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(Math.Max(1, config.RefreshMinutes)) };
+        timer.Interval = TimeSpan.FromMinutes(Math.Max(1, config.RefreshMinutes));
         timer.Tick += async (_, _) => await Refresh();
         timer.Start();
         app.Dispatcher.InvokeAsync(Refresh);
@@ -73,11 +80,13 @@ static class App
     {
         var light = Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
                                       "SystemUsesLightTheme", 0) is 1;
-        var tip = string.Join(" · ", Cards.Select(c => $"{c.Name} {(c.Max is { } m ? Usage.Pct(m) + "%" : "–")}"));
+        var shows = config.TrayShows;
+        var tip = (shows switch { "5h" => "5 hours: ", "week" => "Week: ", _ => "" }) +
+                  string.Join(" · ", Cards.Select(c => $"{c.Name} {(c.Shown(shows) is { } m ? Usage.Pct(m) + "%" : "–")}"));
         if (Cards.Max(c => c.Updated) is { } updated) tip += $"\nupdated {updated.ToLocalTime():HH:mm}";
         for (var i = 0; i < Icons.Length; i++)
         {
-            var max = Cards[i].Max;
+            var max = Cards[i].Shown(shows);
             var text = max is not { } m ? "–" : m >= 100 ? "!!" : Usage.Pct(m).ToString();
             var color = Usage.Level(max) switch { 2 => "#F04438", 1 => "#F5A524", _ => light ? "#1A1A1A" : "#FFFFFF" };
             var old = Icons[i].Icon;
@@ -128,19 +137,26 @@ static class App
         Application.Current.Shutdown();
     }
 
+    /// The settings page: write config.json and apply the change at once. Syncing the page to an unchanged config is a no-op.
+    public static void Save(Config c)
+    {
+        if (c == config) return;
+        config = c;
+        try { File.WriteAllText(ConfigFile, JsonSerializer.Serialize(c, Json)); } catch { }
+        timer.Interval = TimeSpan.FromMinutes(Math.Max(1, c.RefreshMinutes));
+        UpdateIcons();
+    }
+
     static Config LoadConfig()
     {
-        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIUsageTracker");
-        var file = Path.Combine(dir, "config.json");
-        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
         try
         {
-            if (!File.Exists(file))
+            if (!File.Exists(ConfigFile))
             {
-                Directory.CreateDirectory(dir);
-                File.WriteAllText(file, JsonSerializer.Serialize(new Config(), json));
+                Directory.CreateDirectory(Path.GetDirectoryName(ConfigFile)!);
+                File.WriteAllText(ConfigFile, JsonSerializer.Serialize(new Config(), Json));
             }
-            return JsonSerializer.Deserialize<Config>(File.ReadAllText(file), json) ?? new();
+            return JsonSerializer.Deserialize<Config>(File.ReadAllText(ConfigFile), Json) ?? new();
         }
         catch { return new(); }
     }

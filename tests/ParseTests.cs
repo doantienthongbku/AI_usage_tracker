@@ -31,7 +31,13 @@ public class ParseTests
             {"id":"gemini-argon-wtu-weekly","window":"weekly","remaining_fraction":1,"reset_time":"2026-10-29T12:07:32Z"}]}]}}}
         """;
 
-    static readonly DateTimeOffset Now = new(2026, 10, 22, 20, 0, 0, TimeSpan.FromHours(8));
+    // `agy -p /credits`, captured on 2026-10-24.
+    const string GeminiCreditsOut = """
+        {"conversation_id":"","status":"SUCCESS","response":"Remaining credits\t0\nUpgrade\thttps://antigravity.google/g1-upgrade\n",
+         "command":{"name":"credits","data":{"remaining_credits":0,"upgrade_uri":"https://antigravity.google/g1-upgrade"}}}
+        """;
+
+    static readonly DateTimeOffset Now =new(2026, 10, 22, 20, 0, 0, TimeSpan.FromHours(8));
 
     [Fact]
     public void Claude_reads_session_week_and_model_weeks()
@@ -62,8 +68,30 @@ public class ParseTests
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1792672417), c.Five.ResetsAt);
         Assert.Equal(13, c.Week!.Used);
         Assert.Equal("Plus", c.Plan);
-        Assert.StartsWith("2 free full resets · next expires ", c.Note);
-        Assert.EndsWith(Usage.When(DateTimeOffset.FromUnixTimeSeconds(1793291830)), c.Note);
+        Assert.Equal("⟳  2 free full resets · expire " + Usage.When(DateTimeOffset.FromUnixTimeSeconds(1793291830)) + ", " +
+                     Usage.When(DateTimeOffset.FromUnixTimeSeconds(1794007669)), c.Note);
+    }
+
+    [Fact]
+    public void Codex_shows_paid_credits_and_counts_resets_that_never_expire()
+    {
+        var c = Usage.ParseCodex(CodexOut.Replace("\"balance\":\"0\"", "\"balance\":\"25\"")
+            .Replace("\"status\":\"used\",\"expiresAt\":1793000000", "\"status\":\"available\",\"expiresAt\":null"));
+        var lines = c.Note!.Split('\n');
+        Assert.StartsWith("⟳  3 free full resets · expire ", lines[0]);
+        Assert.Equal("◎  25 credits left", lines[1]);
+    }
+
+    [Fact]
+    public void Codex_has_no_note_without_credits() =>
+        Assert.Null(Usage.ParseCodex(CodexOut.Replace("\"status\":\"available\"", "\"status\":\"used\"")).Note);
+
+    [Fact]
+    public void Gemini_credits_show_only_above_zero()
+    {
+        Assert.Null(Usage.GeminiCredits(GeminiCreditsOut));
+        Assert.Equal("◎  250 AI credits left",
+                     Usage.GeminiCredits(GeminiCreditsOut.Replace("\"remaining_credits\":0", "\"remaining_credits\":250")));
     }
 
     [Fact]
@@ -117,12 +145,31 @@ public class ParseTests
     }
 
     [Fact]
-    public void Max_ignores_windows_that_already_reset()
+    public void Shown_picks_the_chosen_window()
+    {
+        var c = new Card("X", "", new Limit(30, null), new Limit(70, null), []);
+        Assert.Equal(30, c.Shown("5h"));
+        Assert.Equal(70, c.Shown("week"));
+        Assert.Equal(70, c.Shown("max"));
+        Assert.Null((c with { Week = null }).Shown("week"));
+    }
+
+    [Fact]
+    public void Shown_ignores_windows_that_already_reset()
     {
         var past = DateTimeOffset.Now.AddMinutes(-1);
         var c = new Card("X", "", new Limit(95, past), new Limit(40, null), []);
-        Assert.Equal(40, c.Max);
+        Assert.Equal(40, c.Shown("max"));
+        Assert.Null(c.Shown("5h"));
     }
+
+    [Theory]
+    [InlineData(18, 82)]
+    [InlineData(99.6, 1)]
+    [InlineData(100, 0)]
+    [InlineData(120, 0)]
+    public void Left_is_100_minus_shown_percent(double used, int left) =>
+        Assert.Equal(left, Usage.Left(used));
 }
 
 public class RunTests

@@ -21,8 +21,9 @@ public record Row(string Label, Limit? Five, Limit? Week);
 public record Card(string Name, string Plan, Limit? Five, Limit? Week, List<Row> Extra,
                    string? Note = null, DateTimeOffset? Updated = null, string? Error = null)
 {
-    /// The window that stops you first. Windows that already reset don't count.
-    public double? Max => new[] { Five, Week }.Where(l => l != null && !l.Passed).Max(l => (double?)l!.Used);
+    /// The tray number: "5h", "week", or else the window that stops you first. Windows that already reset don't count.
+    public double? Shown(string window) => (window switch { "5h" => new[] { Five }, "week" => [Week], _ => [Five, Week] })
+        .Where(l => l != null && !l.Passed).Max(l => (double?)l!.Used);
 }
 
 /// Where the numbers come from: each AI's own CLI (the limitbar approach), so no token is ever read here.
@@ -36,6 +37,9 @@ public static class Usage
         var r = (int)Math.Round(used);
         return r >= 100 && used < 100 ? 99 : r;
     }
+
+    /// What is left, so that used + left always reads 100.
+    public static int Left(double used) => Math.Max(0, 100 - Pct(used));
 
     /// 0 = normal, 1 = amber (≥ 80 %), 2 = red (≥ 90 %), judged on the number the user sees.
     public static int Level(double? used) => used is not { } u ? 0 : Pct(u) >= 90 ? 2 : Pct(u) >= 80 ? 1 : 0;
@@ -63,8 +67,18 @@ public static class Usage
                """{"id":2,"method":"account/rateLimits/read"}""" + "\n",
         until: "\"id\":2");
 
-    public static Task<Card> FetchGemini(string distro) => Fetch("Gemini", "agy", distro,
-        ["-p", "/quota", "--output-format", "json", "--print-timeout", "30s"], ParseGemini);
+    /// `/quota` fills the card; `/credits` only adds a note, so its failure never spoils the card.
+    public static async Task<Card> FetchGemini(string distro)
+    {
+        var card = await Fetch("Gemini", "agy", distro, ["-p", "/quota", "--output-format", "json", "--print-timeout", "30s"], ParseGemini);
+        if (card.Error != null) return card;
+        try
+        {
+            var (output, _) = await Run(distro, "agy", ["-p", "/credits", "--output-format", "json", "--print-timeout", "30s"], null, null);
+            return card with { Note = GeminiCredits(output) };
+        }
+        catch { return card; }
+    }
 
     static async Task<Card> Fetch(string name, string cli, string distro, string[] args, Func<string, Card> parse,
                                   string? input = null, string? until = null)
@@ -195,13 +209,27 @@ public static class Usage
         if (five == null && week == null) throw new FormatException("no rate limits");
 
         var plan = (string?)limits["planType"] is { Length: > 0 } p ? char.ToUpperInvariant(p[0]) + p[1..] : "";
-        var credits = (result["rateLimitResetCredits"]?["credits"] as JsonArray ?? new JsonArray())
-            .Where(c => (string?)c?["status"] == "available" && c?["expiresAt"] != null)
-            .Select(c => DateTimeOffset.FromUnixTimeSeconds((long)c!["expiresAt"]!))
-            .Order().ToList();
-        var note = credits.Count == 0 ? null
-            : $"{credits.Count} free full reset{(credits.Count == 1 ? "" : "s")} · next expires {When(credits[0])}";
-        return new Card("ChatGPT", plan, five, week, [], note);
+
+        // Free full resets, each with its own expiry (a null expiresAt never expires), and the paid credit balance.
+        var resets = (result["rateLimitResetCredits"]?["credits"] as JsonArray ?? new JsonArray())
+            .Where(c => (string?)c?["status"] == "available").ToList();
+        var expiries = resets.Select(c => (long?)c!["expiresAt"]).OfType<long>()
+            .Select(DateTimeOffset.FromUnixTimeSeconds).Order().Select(When).ToList();
+        var resetLine = resets.Count == 0 ? null : $"⟳  {resets.Count} free full reset{(resets.Count == 1 ? "" : "s")}" +
+            (expiries.Count == 0 ? "" : $" · expire{(expiries.Count == 1 ? "s" : "")} {string.Join(", ", expiries)}");
+        var paid = limits["credits"];
+        var balance = double.TryParse((string?)paid?["balance"], NumberStyles.Float, CultureInfo.InvariantCulture, out var b) ? b : 0;
+        var creditLine = (bool?)paid?["unlimited"] == true ? "◎  Unlimited credits" : balance > 0 ? $"◎  {balance:0.##} credits left" : null;
+
+        var note = string.Join("\n", new[] { resetLine, creditLine }.OfType<string>());
+        return new Card("ChatGPT", plan, five, week, [], note == "" ? null : note);
+    }
+
+    /// `agy -p /credits` JSON: the remaining Google One AI credits, shown only above 0. It gives no expiry date.
+    public static string? GeminiCredits(string output)
+    {
+        var left = (double?)JsonNode.Parse(output)?["command"]?["data"]?["remaining_credits"] ?? 0;
+        return left > 0 ? $"◎  {left:0.##} AI credits left" : null;
     }
 
     /// `agy -p /quota` JSON. "Gemini Models" fills the columns. Other Gemini groups (e.g. Argon) become extra rows.

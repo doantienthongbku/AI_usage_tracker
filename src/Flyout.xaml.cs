@@ -9,13 +9,16 @@ using System.Windows.Media.Animation;
 
 namespace AIUsageTracker;
 
-/// The detail panel: one block per AI with "5 hours" and "Week" columns, styled after reference.jpg.
+/// The detail panel: one block per AI with "5 hours" and "Week" columns, styled after reference.jpg,
+/// and the settings page that takes its place.
 public partial class Flyout : Window
 {
     static readonly Brush Grey = Hex("#9AA3B2"), White = Hex("#F2F2F2"), Amber = Hex("#F5A524"), Red = Hex("#F04438");
     static readonly string[] MarkPaths = [Marks.Claude, Marks.OpenAI, Marks.Gemini];
     static readonly string[] MarkColors = ["#D97757", "#F2F2F2", "#4796E3"];
+    static readonly int[] Minutes = [5, 10, 15, 30, 60];
     DateTime hiddenAt;
+    IntPtr hwnd;
 
     public Flyout()
     {
@@ -40,6 +43,7 @@ public partial class Flyout : Window
 
     public void Open()
     {
+        ShowSettings(false);
         Render();
         Place();
         Show();
@@ -61,35 +65,52 @@ public partial class Flyout : Window
     record struct AccentPolicy(int State, int Flags, int Color, int Animation);
     struct CompositionData { public int Attribute; public IntPtr Data; public int Size; }
 
-    /// The glass tint: navy #1C2433 at 60 %, written as 0xAABBGGRR.
-    const int Tint = unchecked((int)0x9933241C);
-
     /// Frosted glass like the Opus 5.5 panel: Windows blurs what is behind the panel under our navy tint
     /// (acrylic accent, the tunable route), and rounds the corners, which also adds its shadow and edge.
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        var hwnd = new WindowInteropHelper(this).Handle;
+        hwnd = new WindowInteropHelper(this).Handle;
         int dark = 1, round = 2, edge = 0x00685A4E;
         DwmSetWindowAttribute(hwnd, 20, ref dark, sizeof(int));    // DWMWA_USE_IMMERSIVE_DARK_MODE
         DwmSetWindowAttribute(hwnd, 33, ref round, sizeof(int));   // DWMWA_WINDOW_CORNER_PREFERENCE: round
         DwmSetWindowAttribute(hwnd, 34, ref edge, sizeof(int));    // DWMWA_BORDER_COLOR: soft slate edge
 
-        var accent = new AccentPolicy(4, 0, Tint, 0);   // ACCENT_ENABLE_ACRYLICBLURBEHIND
+        if (SetGlass(App.Config.Transparency)) HwndSource.FromHwnd(hwnd).CompositionTarget.BackgroundColor = Colors.Transparent;
+        else Root.Background = Hex("#F21C2230");
+    }
+
+    /// The glass tint is navy #1C2433, written as 0xAABBGGRR. Transparency 40 % (the default) is a 60 % tint;
+    /// it stops at 90 % so the white text stays readable.
+    bool SetGlass(int transparency)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        var alpha = (100 - Math.Clamp(transparency, 0, 90)) * 255 / 100;
+        var accent = new AccentPolicy(4, 0, alpha << 24 | 0x33241C, 0);   // ACCENT_ENABLE_ACRYLICBLURBEHIND
         var data = new CompositionData { Attribute = 19, Size = Marshal.SizeOf<AccentPolicy>() };   // WCA_ACCENT_POLICY
         data.Data = Marshal.AllocHGlobal(data.Size);
         Marshal.StructureToPtr(accent, data.Data, false);
         var glass = SetWindowCompositionAttribute(hwnd, ref data);
         Marshal.FreeHGlobal(data.Data);
+        return glass;
+    }
 
-        if (glass) HwndSource.FromHwnd(hwnd).CompositionTarget.BackgroundColor = Colors.Transparent;
-        else Root.Background = Hex("#F21C2230");
+    /// Swaps the limits for the settings page. The controls are synced from the config first;
+    /// the change handlers this fires write back the same config, which App.Save ignores.
+    void ShowSettings(bool on)
+    {
+        var c = App.Config;
+        LoginSwitch.IsChecked = App.StartsAtLogin;
+        MinutesText.Text = $"{c.RefreshMinutes} min";
+        GlassSlider.Value = Math.Clamp(c.Transparency, 0, 90);
+        foreach (RadioButton r in TrayChoice.Children) r.IsChecked = (string)r.Tag == c.TrayShows;
+        CardsPanel.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+        SettingsPanel.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void Render()
     {
         RefreshText.Text = App.Busy ? "Refreshing…" : "Refresh Now";
-        LoginSwitch.IsChecked = App.StartsAtLogin;
         CardsPanel.Children.Clear();
         CardsPanel.Children.Add(Line(Text("Limits", White, bold: true, size: 14), Text("5 hours", Grey), Text("Week", Grey)));
         for (var i = 0; i < App.Cards.Length; i++)
@@ -115,7 +136,7 @@ public partial class Flyout : Window
         numbers.Children.Add(Line(Text(c.Plan, Grey), Bar(c.Five), Bar(c.Week)));
         numbers.Children.Add(Line(Text(Updated(c), Grey), Text(Resets(c.Five), Grey), Text(Resets(c.Week), Grey)));
         foreach (var row in c.Extra) numbers.Children.Add(Line(Text(row.Label, Grey), Mini(row.Five), Mini(row.Week)));
-        if (c.Note != null) numbers.Children.Add(Wrapped(Text("⟳  " + c.Note, Grey)));
+        if (c.Note != null) numbers.Children.Add(Wrapped(Text(c.Note, Grey)));   // one line per kind of credit
 
         var block = new StackPanel();
         block.Children.Add(numbers);
@@ -144,7 +165,7 @@ public partial class Flyout : Window
         if (l == null || l.Passed) return Text(l == null ? "—" : "reset", Grey);
         var t = new TextBlock();
         t.Inlines.Add(new Run($"{Usage.Pct(l.Used)}%") { FontWeight = FontWeights.SemiBold, FontSize = 13.5, Foreground = Level(l.Used) });
-        t.Inlines.Add(new Run(" used") { Foreground = Grey });
+        t.Inlines.Add(new Run($" used · {Usage.Left(l.Used)}% left") { Foreground = Grey });
         return t;
     }
 
@@ -190,11 +211,31 @@ public partial class Flyout : Window
     static Brush Hex(string color) => (Brush)new BrushConverter().ConvertFromString(color)!;
 
     async void Refresh_Click(object sender, RoutedEventArgs e) => await App.Refresh();
-    /// Also fires when Render() syncs the switch from the registry, so write only on a real change.
+    void Settings_Click(object sender, RoutedEventArgs e) => ShowSettings(SettingsPanel.Visibility != Visibility.Visible);
+    /// Also fires when ShowSettings() syncs the switch from the registry, so write only on a real change.
     void Login_Changed(object sender, RoutedEventArgs e)
     {
         var on = LoginSwitch.IsChecked == true;
         if (App.StartsAtLogin != on) App.StartsAtLogin = on;
     }
+
+    /// − / + step through the preset minutes; a hand-edited value steps to its nearest neighbor.
+    void Minutes_Click(object sender, RoutedEventArgs e)
+    {
+        var m = App.Config.RefreshMinutes;
+        m = (string)((Button)sender).Tag == "+" ? Minutes.FirstOrDefault(s => s > m, m) : Minutes.LastOrDefault(s => s < m, m);
+        App.Save(App.Config with { RefreshMinutes = m });
+        MinutesText.Text = $"{m} min";
+    }
+
+    void Glass_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        var t = (int)e.NewValue;
+        GlassText.Text = $"{t}%";
+        SetGlass(t);
+        App.Save(App.Config with { Transparency = t });
+    }
+
+    void Tray_Checked(object sender, RoutedEventArgs e) => App.Save(App.Config with { TrayShows = (string)((RadioButton)sender).Tag });
     void Quit_Click(object sender, RoutedEventArgs e) => App.Quit();
 }

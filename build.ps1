@@ -1,6 +1,6 @@
 # Builds dist\AIUsageTracker-Setup-<version>.exe: run the tests, publish one self-contained exe,
-# then package it with Inno Setup 6. Usage: .\build.ps1 [-Version 1.0.0]
-param([string]$Version = "1.0.0")
+# then package it with Inno Setup 6. Usage: .\build.ps1 [-Version 1.1.0]
+param([string]$Version = "1.1.0")
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 

@@ -1,6 +1,6 @@
 ; Per-user installer (no admin prompt). Built by build.ps1 with Inno Setup 6.
 #ifndef Version
-  #define Version "1.0.0"
+  #define Version "1.1.0"
 #endif
 
 [Setup]
