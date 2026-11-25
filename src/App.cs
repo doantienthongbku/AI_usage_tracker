@@ -20,7 +20,7 @@ static class App
     static readonly string[] Brands = ["#D97757", "#10A37F", "#4796E3"];
 
     public static Card[] Cards = [new("Claude", "Pro", null, null, []), new("ChatGPT", "Plus", null, null, []),
-                                  new("Gemini", "Google AI Pro", null, null, [])];
+                                  new("Gemini", "Coding · AI Pro", null, null, [Usage.GeminiChat])];
     public static bool Busy { get; private set; }
     static readonly Forms.NotifyIcon[] Icons = new Forms.NotifyIcon[3];
     static readonly string ConfigFile = Path.Combine(

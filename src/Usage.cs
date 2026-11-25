@@ -14,8 +14,8 @@ public record Limit(double Used, DateTimeOffset? ResetsAt)
     public bool Passed => ResetsAt < DateTimeOffset.Now;
 }
 
-/// An extra line under a card, e.g. Claude's per-model week or Gemini 4 Argon.
-public record Row(string Label, Limit? Five, Limit? Week);
+/// An extra line under a card, e.g. Claude's per-model week or Gemini 4 Argon. With a Url it is a link instead of numbers.
+public record Row(string Label, Limit? Five, Limit? Week, string? Url = null);
 
 /// Everything the tray and the flyout show for one AI.
 public record Card(string Name, string Plan, Limit? Five, Limit? Week, List<Row> Extra,
@@ -138,8 +138,11 @@ public static class Usage
         return (output.ToString(), err);
     }
 
+    // Signed-out Claude Code gives no error: its /usage falls back to the API-cost view ("Estimated cost: …").
+    // Its token errors end in "Please run /login".
     static readonly string[] SignedOut = ["not logged in", "not signed in", "please log in", "please sign in", "login required",
-        "unauthenticated", "unauthorized", "no credentials", "not authenticated", "authentication required"];
+        "unauthenticated", "unauthorized", "no credentials", "not authenticated", "authentication required",
+        "/login", "estimated cost"];
 
     /// One fixed line explaining a failed fetch. The CLI's own text is only matched, never shown.
     public static string Problem(string cli, string output) =>
@@ -232,7 +235,11 @@ public static class Usage
         return left > 0 ? $"◎  {left:0.##} AI credits left" : null;
     }
 
-    /// `agy -p /quota` JSON. "Gemini Models" fills the columns. Other Gemini groups (e.g. Argon) become extra rows.
+    /// No CLI reports the Gemini app's chat limits, so the Gemini card links to Google's own usage page.
+    public static readonly Row GeminiChat = new("Chat", null, null, "https://gemini.google.com/usage");
+
+    /// `agy -p /quota` JSON: Antigravity's coding quota. "Gemini Models" fills the columns. Other Gemini groups
+    /// (e.g. Argon) become extra rows, then the Chat link.
     public static Card ParseGemini(string output)
     {
         var groups = JsonNode.Parse(output)?["command"]?["data"]?["groups"] as JsonArray
@@ -255,6 +262,7 @@ public static class Usage
         var main = rows.Find(r => r.Label == "Gemini Models") ?? rows.FirstOrDefault();
         if (main?.Five == null && main?.Week == null) throw new FormatException("no Gemini quota");
         rows.Remove(main!);
-        return new Card("Gemini", "Google AI Pro", main!.Five, main.Week, rows);
+        rows.Add(GeminiChat);
+        return new Card("Gemini", "Coding · AI Pro", main!.Five, main.Week, rows);
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -135,7 +136,9 @@ public partial class Flyout : Window
         numbers.Children.Add(Line(name, Used(c.Five), Used(c.Week)));
         numbers.Children.Add(Line(Text(c.Plan, Grey), Bar(c.Five), Bar(c.Week)));
         numbers.Children.Add(Line(Text(Updated(c), Grey), Text(Resets(c.Five), Grey), Text(Resets(c.Week), Grey)));
-        foreach (var row in c.Extra) numbers.Children.Add(Line(Text(row.Label, Grey), Mini(row.Five), Mini(row.Week)));
+        foreach (var row in c.Extra)
+            numbers.Children.Add(row.Url == null ? Line(Text(row.Label, Grey), Mini(row.Five), Mini(row.Week))
+                                                 : Line(Text(row.Label, Grey), Link(row.Url), new Border()));
         if (c.Note != null) numbers.Children.Add(Wrapped(Text(c.Note, Grey)));   // one line per kind of credit
 
         var block = new StackPanel();
@@ -181,6 +184,16 @@ public partial class Flyout : Window
         pct.Width = 38;
         cell.Children.Add(pct);
         cell.Children.Add(new ProgressBar { Value = l.Used, Foreground = Level(l.Used), VerticalAlignment = VerticalAlignment.Center });
+        return cell;
+    }
+
+    /// "gemini.google.com/usage ↗" across both columns. It opens the browser, which takes focus and so hides the panel.
+    static UIElement Link(string url)
+    {
+        var link = new Hyperlink(new Run(url.Replace("https://", "") + " ↗")) { Foreground = Hex("#8AB4F8") };
+        link.Click += (_, _) => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        var cell = new TextBlock(link) { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumnSpan(cell, 2);
         return cell;
     }
 

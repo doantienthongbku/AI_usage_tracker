@@ -31,6 +31,12 @@ public class ParseTests
             {"id":"gemini-argon-wtu-weekly","window":"weekly","remaining_fraction":1,"reset_time":"2026-10-29T12:07:32Z"}]}]}}}
         """;
 
+    // `claude -p /usage` while signed out, captured on 2026-11-26: no error, just the API-cost view.
+    const string ClaudeSignedOutOut = """
+        {"type":"result","subtype":"success","is_error":false,"num_turns":0,"total_cost_usd":0,"local_command":"usage",
+         "result":"Estimated cost:        $0.0000\nTotal duration (API):  0s\nTotal duration (wall): 0s\nTotal code changes:    0 lines added, 0 lines removed\nUsage:                 0 input, 0 output, 0 cache read, 0 cache write"}
+        """;
+
     // `agy -p /credits`, captured on 2026-10-24.
     const string GeminiCreditsOut = """
         {"conversation_id":"","status":"SUCCESS","response":"Remaining credits\t0\nUpgrade\thttps://antigravity.google/g1-upgrade\n",
@@ -95,16 +101,18 @@ public class ParseTests
     }
 
     [Fact]
-    public void Gemini_reads_main_group_and_other_gemini_groups_only()
+    public void Gemini_reads_coding_group_other_gemini_groups_and_links_chat()
     {
         var c = Usage.ParseGemini(GeminiOut);
+        Assert.Equal("Coding · AI Pro", c.Plan);
         Assert.Equal(0, c.Five!.Used);
         Assert.Equal(78, c.Week!.Used, 3);
         Assert.Equal(DateTimeOffset.Parse("2026-10-29T12:07:32Z"), c.Week.ResetsAt);
-        var argon = Assert.Single(c.Extra);
-        Assert.Equal("Gemini 4 Argon", argon.Label);
+        Assert.Equal(["Gemini 4 Argon", "Chat"], c.Extra.Select(r => r.Label));
+        var argon = c.Extra[0];
         Assert.Null(argon.Five);
         Assert.Equal(0, argon.Week!.Used);
+        Assert.Equal(new Row("Chat", null, null, "https://gemini.google.com/usage"), c.Extra[1]);
     }
 
     [Theory]
@@ -125,6 +133,14 @@ public class ParseTests
     {
         Assert.StartsWith("Not signed in", Usage.Problem("codex", "Error: Not logged in. Run codex login"));
         Assert.StartsWith("No data", Usage.Problem("agy", "segfault"));
+    }
+
+    [Fact]
+    public void Problem_tells_claude_sign_in_errors()
+    {
+        Assert.Throws<FormatException>(() => Usage.ParseClaude(ClaudeSignedOutOut, Now));
+        Assert.StartsWith("Not signed in", Usage.Problem("claude", ClaudeSignedOutOut));
+        Assert.StartsWith("Not signed in", Usage.Problem("claude", "OAuth token has expired · Please run /login"));
     }
 
     [Theory]

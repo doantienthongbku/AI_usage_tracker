@@ -11,12 +11,13 @@ A small Windows 11 tray app, in the spirit of RunCat and [limitbar](https://gith
 - **Click (left or right) any icon:** a translucent panel with every limit (how much is used and how much is left), its bar, and when it resets. Starting the app again from the Start Menu also opens the panel.
 - **Footer:** Refresh Now · Settings · Quit.
 - **Settings:** Open at Login, how often to refresh (5–60 min), the panel's transparency, and which window the tray numbers show (Highest, 5 hours or Week). Changes apply at once.
+- **Gemini, two parts:** *Coding* is your Antigravity quota (the numbers and the tray icon). *Chat* is a link to [gemini.google.com/usage](https://gemini.google.com/usage), because no command-line tool reports the Gemini app's chat limits.
 - **Credits:** any credit above 0 shows under its card: ChatGPT's free full resets (each with its expiry date) and paid credit balance, and Gemini's AI credits. Claude's CLI has no read-only credits command, and the other balances come without an expiry date.
 - **Keys:** Esc closes the panel; Ctrl+R refreshes; Ctrl+Q quits.
 
 ## Install
 
-1. Run `dist\AIUsageTracker-Setup-1.1.0.exe`. It installs for your user only, with no admin prompt, to `%LOCALAPPDATA%\Programs\AI Usage Tracker`.
+1. Run `dist\AIUsageTracker-Setup-1.2.0.exe`. It installs for your user only, with no admin prompt, to `%LOCALAPPDATA%\Programs\AI Usage Tracker`.
    The installer is not code-signed, so SmartScreen may warn: click **More info › Run anyway**.
 2. Windows hides new tray icons at first. Open **Settings › Personalization › Taskbar › Other system tray icons** and turn on the three *AI Usage Tracker* entries, or drag them out of the `^` overflow onto the taskbar.
 
@@ -30,11 +31,11 @@ Like limitbar, the app **asks each AI's own command-line tool** for its usage. I
 |---|---|---|
 | Claude | `claude -p /usage` (Claude Code) | Your Claude plan's 5-hour session and weekly limits. These are shared by claude.ai and Claude Code. |
 | ChatGPT | `codex app-server` → `account/rateLimits/read` (Codex CLI) | Your ChatGPT plan's **Codex** 5-hour and weekly limits, plus free full resets and paid credits. No tool exposes the chat-message caps. |
-| Gemini | `agy -p /quota` and `agy -p /credits` (Google Antigravity CLI) | Your Google AI Pro **Antigravity** quota (Gemini models: 5-hour and weekly), plus Gemini 4 Argon and your remaining AI credits. It does not cover the Gemini app's chat limits. |
+| Gemini | `agy -p /quota` and `agy -p /credits` (Google Antigravity CLI) | **Coding:** your Google AI Pro **Antigravity** quota (Gemini models: 5-hour and weekly), plus Gemini 4 Argon and your remaining AI credits. **Chat:** no CLI reports the Gemini app's limits, so the card links to gemini.google.com/usage, which opens in your browser. |
 
 All three CLIs must be installed and signed in. On this PC they live in WSL (distro `Ubuntu-20.04`), so the app runs them through `wsl.exe`.
 
-- If a card says **"Not signed in — run `…`"**, open that CLI in WSL and sign in.
+- If a card says **"Not signed in — run `…`"**, open that CLI in WSL and sign in. For Claude, run `claude` and then `/login` (signed out, Claude's `/usage` shows only an API-cost summary).
 - **"No data"** means the CLI is missing, timed out, or changed its output. The last good numbers stay visible, dimmed.
 
 ## Settings
@@ -52,7 +53,7 @@ The Settings page saves to `%LOCALAPPDATA%\AIUsageTracker\config.json`, which is
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Inno Setup 6 (`winget install --id JRSoftware.InnoSetup -e --scope user`). Then:
 
 ```powershell
-.\build.ps1 -Version 1.1.0     # tests → dotnet publish → dist\AIUsageTracker-Setup-1.1.0.exe
+.\build.ps1 -Version 1.2.0     # tests → dotnet publish → dist\AIUsageTracker-Setup-1.2.0.exe
 ```
 
 The parser tests also run on Linux/WSL: `dotnet test tests`.
